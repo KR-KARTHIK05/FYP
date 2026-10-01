@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Green Edge Scheduler — Status</title>
+  <meta name="description" content="Real-time status dashboard for the green-aware edge computing scheduler." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --yellow:    #d29922;
+      --red:       #f85149;
+      --blue:      #58a6ff;
+      --purple:    #bc8cff;
+      --accent:    #238636;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--green), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p {
+      color: var(--muted);
+      margin-top: .4rem;
+      font-size: .9rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 1.2rem;
+      max-width: 900px;
+      margin: 0 auto;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      transition: border-color .2s, transform .2s;
+    }
+    .card:hover { border-color: var(--blue); transform: translateY(-2px); }
+
+    .card-title {
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: .75rem;
+    }
+
+    .endpoint-list { list-style: none; }
+    .endpoint-list li {
+      display: flex;
+      align-items: baseline;
+      gap: .6rem;
+      padding: .35rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: .85rem;
+    }
+    .endpoint-list li:last-child { border-bottom: none; }
+
+    .badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .7rem;
+      font-weight: 600;
+      padding: .15rem .45rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .badge-get    { background: #1a3a5c; color: var(--blue); }
+    .badge-post   { background: #1a3a1a; color: var(--green); }
+
+    .path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .8rem;
+      color: var(--text);
+    }
+
+    /* Live telemetry table */
+    #telemetry-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    #telemetry-table th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: .4rem .5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    #telemetry-table td {
+      padding: .45rem .5rem;
+      border-bottom: 1px solid var(--border);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    #telemetry-table tr:last-child td { border-bottom: none; }
+
+    .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+    .dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot-yellow { background: var(--yellow); }
+    .dot-red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+    /* Forecast */
+    #forecast-container { font-size: .82rem; color: var(--muted); min-height: 40px; }
+    #forecast-values {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .35rem;
+      margin-top: .6rem;
+    }
+    .fc-chip {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .72rem;
+      background: #1a2a1a;
+      color: var(--green);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: .2rem .5rem;
+    }
+
+    /* Status indicator */
+    #api-status {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      font-size: .9rem;
+      font-weight: 600;
+    }
+
+    /* Refresh button */
+    .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: .5rem 1.1rem;
+      font-size: .82rem;
+      font-family: 'Inter', sans-serif;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s;
+      margin-top: .75rem;
+    }
+    .btn:hover { opacity: .85; }
+
+    .full-width { grid-column: 1 / -1; }
+    .links { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .ext-link {
+      color: var(--blue);
+      text-decoration: none;
+      font-size: .85rem;
+      border: 1px solid var(--border);
+      padding: .35rem .8rem;
+      border-radius: 7px;
+      transition: border-color .2s;
+    }
+    .ext-link:hover { border-color: var(--blue); }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: .78rem;
+      margin-top: 2.5rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🌿 Green Edge Scheduler</h1>
+  <p>Carbon-aware workload orchestration for Raspberry Pi edge clusters</p>
+</header>
+
+<div class="grid">
+
+  <!-- API Status -->
+  <div class="card">
+    <div class="card-title">API Status</div>
+    <div id="api-status"><span class="dot dot-yellow"></span> Checking…</div>
+    <button class="btn" onclick="refreshAll()">↻ Refresh</button>
+  </div>
+
+  <!-- Quick Links -->
+  <div class="card">
+    <div class="card-title">Observability</div>
+    <div class="links">
+      <a class="ext-link" href="http://localhost:9090" target="_blank">📈 Prometheus</a>
+      <a class="ext-link" href="http://localhost:3000" target="_blank">📊 Grafana</a>
+    </div>
+  </div>
+
+  <!-- Endpoints -->
+  <div class="card full-width">
+    <div class="card-title">API Endpoints</div>
+    <ul class="endpoint-list">
+      <li><span class="badge badge-get">GET</span>  <span class="path">/api/forecast</span>     — 24-hour LSTM carbon intensity forecast</li>
+      <li><span class="badge badge-post">POST</span> <span class="path">/api/observation</span>  — Append a live data point to training set</li>
+      <li><span class="badge badge-get">GET</span>  <span class="path">/api/telemetry</span>     — Live telemetry for all nodes</li>
+      <li><span class="badge badge-post">POST</span> <span class="path">/api/telemetry</span>    — Update a node's telemetry</li>
+      <li><span class="badge badge-get">GET</span>  <span class="path">/metrics</span>            — Prometheus scrape endpoint</li>
+      <li><span class="badge badge-post">POST</span> <span class="path">/api/scheduler/filter</span>     — K8s extender: filter hot nodes</li>
+      <li><span class="badge badge-post">POST</span> <span class="path">/api/scheduler/prioritize</span> — K8s extender: score nodes</li>
+      <li><span class="badge badge-post">POST</span> <span class="path">/api/scheduler/schedule</span>   — Full schedule decision</li>
+    </ul>
+  </div>
+
+  <!-- Live Telemetry -->
+  <div class="card full-width">
+    <div class="card-title">Live Node Telemetry</div>
+    <table id="telemetry-table">
+      <thead>
+        <tr>
+          <th>Node</th>
+          <th>Temp (°C)</th>
+          <th>Power (W)</th>
+          <th>State</th>
+          <th>Thermal</th>
+        </tr>
+      </thead>
+      <tbody id="telemetry-body">
+        <tr><td colspan="5" style="color:var(--muted);padding:.5rem">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Forecast -->
+  <div class="card full-width">
+    <div class="card-title">24-Hour Carbon Forecast (next run on demand)</div>
+    <div id="forecast-container">Click <strong>Load Forecast</strong> to train the LSTM and fetch predictions.</div>
+    <div id="forecast-values"></div>
+    <button class="btn" onclick="loadForecast()" id="fc-btn">Load Forecast</button>
+  </div>
+
+</div>
+
+<footer>Green Edge Scheduler · FYP Project · Auto-refreshing every 10 s</footer>
+
+<script>
+  async function fetchJSON(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }
+
+  async function refreshTelemetry() {
+    const tbody = document.getElementById('telemetry-body');
+    try {
+      const nodes = await fetchJSON('/api/telemetry');
+      tbody.innerHTML = nodes.map(n => {
+        const tempColor = n.temperature_celsius >= 75 ? 'dot-red'
+                        : n.temperature_celsius >= 60 ? 'dot-yellow' : 'dot-green';
+        const stateLabel = n.is_busy ? '⚙ Busy' : '— Idle';
+        const thermal = n.is_overheating
+          ? '<span style="color:var(--red);font-weight:600">⚠ OVERHEATING</span>'
+          : '<span style="color:var(--green)">OK</span>';
+        return `<tr>
+          <td>${n.node_id}</td>
+          <td><span class="dot ${tempColor}"></span>${n.temperature_celsius}</td>
+          <td>${n.power_watts}</td>
+          <td>${stateLabel}</td>
+          <td>${thermal}</td>
+        </tr>`;
+      }).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red)">Error: ${e.message}</td></tr>`;
+    }
+  }
+
+  async function checkStatus() {
+    const el = document.getElementById('api-status');
+    try {
+      await fetch('/metrics');
+      el.innerHTML = '<span class="dot dot-green"></span> API Online';
+    } catch {
+      el.innerHTML = '<span class="dot dot-red"></span> API Offline';
+    }
+  }
+
+  async function loadForecast() {
+    const btn = document.getElementById('fc-btn');
+    const container = document.getElementById('forecast-container');
+    const valContainer = document.getElementById('forecast-values');
+    btn.disabled = true;
+    btn.textContent = 'Training LSTM…';
+    container.textContent = 'Running forecast (this may take ~30 s on first run)…';
+    valContainer.innerHTML = '';
+    try {
+      const data = await fetchJSON('/api/forecast');
+      container.textContent = `Source: ${data.forecast_source} · Updated: ${data.updated_at}`;
+      valContainer.innerHTML = data.forecast.map((v, i) =>
+        `<span class="fc-chip" title="Hour ${i+1}">${Math.round(v).toLocaleString()}</span>`
+      ).join('');
+    } catch (e) {
+      container.textContent = `Error: ${e.message}`;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Reload Forecast';
+  }
+
+  function refreshAll() { checkStatus(); refreshTelemetry(); }
+
+  // Initial load + auto-refresh every 10 s
+  refreshAll();
+  setInterval(refreshTelemetry, 10000);
+  setInterval(checkStatus, 10000);
+</script>
+</body>
+</html>

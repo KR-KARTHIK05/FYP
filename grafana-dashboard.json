@@ -1,25 +1,221 @@
 {
+  "uid": "green-edge-telemetry-v1",
   "title": "Green Edge Telemetry",
+  "description": "Real-time thermal, power, and carbon metrics for the green-aware edge scheduler.",
   "schemaVersion": 39,
-  "time": {"from": "now-15m", "to": "now"},
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "tags": ["green-edge", "edge-computing", "carbon"],
   "panels": [
     {
+      "id": 1,
       "type": "timeseries",
-      "title": "Node temperature",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-      "targets": [{"expr": "edge_node_temperature_celsius", "legendFormat": "{{node}}"}]
+      "title": "Node Temperature (°C)",
+      "description": "Live temperature per simulated Pi node. Dashed line = safety limit.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 75 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "edge_node_temperature_celsius",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
     },
     {
+      "id": 2,
       "type": "timeseries",
-      "title": "Node power",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-      "targets": [{"expr": "edge_node_power_watts", "legendFormat": "{{node}}"}]
+      "title": "Node Power (Watts)",
+      "description": "Power draw per node. Idle ≈ 2.8 W, active FP32 ≈ 8.5 W, active INT8 ≈ 4.2 W.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+      "fieldConfig": {
+        "defaults": { "unit": "watt" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "edge_node_power_watts",
+          "legendFormat": "{{node}}"
+        }
+      ]
     },
     {
+      "id": 3,
       "type": "stat",
-      "title": "Busy nodes",
-      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 8},
-      "targets": [{"expr": "sum(edge_node_busy)"}]
+      "title": "Busy Nodes",
+      "description": "Number of nodes currently running a workload.",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 3 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "sum(edge_node_busy)",
+          "legendFormat": "Busy"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Overheating Nodes",
+      "description": "Nodes currently at or above 75 °C thermal limit.",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "sum(edge_node_temperature_celsius >= 75)",
+          "legendFormat": "Overheating"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Total Fleet Power (Watts)",
+      "description": "Sum of power consumption across all nodes.",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+      "fieldConfig": {
+        "defaults": { "unit": "watt" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "sum(edge_node_power_watts)",
+          "legendFormat": "Total"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" }
+    },
+    {
+      "id": 6,
+      "type": "gauge",
+      "title": "Average Node Temperature",
+      "description": "Fleet-wide average temperature.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "min": 20,
+          "max": 85,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 55 },
+              { "color": "red", "value": 70 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "avg(edge_node_temperature_celsius)",
+          "legendFormat": "Avg temp"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "gauge",
+      "title": "Average Node Power",
+      "description": "Fleet-wide average power draw.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "min": 0,
+          "max": 12,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 6 },
+              { "color": "red", "value": 9 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "avg(edge_node_power_watts)",
+          "legendFormat": "Avg power"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Total Fleet Power over Time",
+      "description": "Tracks total power consumption of the cluster over the last 15 minutes.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+      "fieldConfig": {
+        "defaults": { "unit": "watt", "custom": { "fillOpacity": 20 } }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "sum(edge_node_power_watts)",
+          "legendFormat": "Fleet total"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus-green-edge" },
+          "expr": "edge_node_power_watts",
+          "legendFormat": "{{node}}"
+        }
+      ]
     }
   ]
 }
