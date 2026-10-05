@@ -1,0 +1,8 @@
+apiVersion: v2
+name: green-edge-scheduler
+description: Thermal-Carbon Aware Dynamic Scheduling in Kubernetes for Reduced Emissions
+type: application
+version: 0.1.0
+appVersion: "1.0"
+maintainers:
+  - name: Group 29

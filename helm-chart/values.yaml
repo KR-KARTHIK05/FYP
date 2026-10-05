@@ -1,0 +1,19 @@
+replicaCount: 1
+
+image:
+  repository: green-edge-scheduler
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 5000
+
+env:
+  schedulerMode: "kubernetes"
+  electricityMapsZone: "IN"
+  forecastAggregationMinutes: "15"
+
+telemetryAgent:
+  enabled: true
+  intervalSeconds: 5

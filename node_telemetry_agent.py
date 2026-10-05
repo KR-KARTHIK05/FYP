@@ -4,6 +4,7 @@ import json
 import os
 import random
 import ssl
+import subprocess
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -85,7 +86,17 @@ def main():
             power = max(3.5, base_power + randomizer.uniform(-0.6, 0.6))
         else:
             power = max(2.4, node.idle_power + randomizer.uniform(-0.2, 0.2))
+        
         node.update_physics(interval, power if node.is_busy else None)
+        
+        # Override with real temperature if available
+        try:
+            out = subprocess.check_output(['vcgencmd', 'measure_temp'], text=True)
+            real_temp = float(out.replace('temp=', '').replace("'C\n", ''))
+            node.temp = real_temp
+        except Exception:
+            pass
+            
         try:
             publish(node, telemetry_url)
             publish_node_annotations(node, carbon_url)
