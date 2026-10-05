@@ -8,9 +8,17 @@ data:
     kind: KubeSchedulerConfiguration
     profiles:
       - schedulerName: green-scheduler
-    extenders:
-      - urlPrefix: http://green-scheduler-webhook:5000/api/scheduler
-        filterVerb: filter
-        prioritizeVerb: prioritize
-        weight: 1
-        enableHttps: false
+        plugins:
+          filter:
+            enabled:
+              - name: GreenEdge
+          preScore:
+            enabled:
+              - name: GreenEdge
+          score:
+            enabled:
+              - name: GreenEdge
+          reserve:
+            enabled:
+              - name: GreenEdge
+    extenders: []

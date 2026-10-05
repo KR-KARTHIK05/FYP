@@ -1,0 +1,21 @@
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+  - schedulerName: green-scheduler
+    plugins:
+      filter:
+        enabled:
+          - name: GreenEdge
+      preScore:
+        enabled:
+          - name: GreenEdge
+      score:
+        enabled:
+          - name: GreenEdge
+      reserve:
+        enabled:
+          - name: GreenEdge
+      multiPoint:
+        disabled:
+          - name: GreenEdge
+extenders: []

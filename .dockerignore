@@ -3,7 +3,6 @@
 .gitignore
 
 # Large data files - mounted at runtime or baked in selectively
-india_monthly_full_release_long_format.csv
 india_yearly_full_release_long_format.csv
 india_forecast_predictions.csv
 

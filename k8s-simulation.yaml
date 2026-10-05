@@ -12,6 +12,8 @@ spec:
       labels:
         app: green-scheduler-webhook
     spec:
+      nodeSelector:
+        edge-role: compute
       containers:
         - name: webhook
           image: green-edge-webhook:local
@@ -24,6 +26,39 @@ spec:
               port: 5000
             initialDelaySeconds: 10
             periodSeconds: 10
+          env:
+            - name: SIMULATED_NODE_IDS
+              value: ""
+            - name: SCHEDULER_MODE
+              value: kubernetes
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: green-node-telemetry
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: green-node-telemetry
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: green-node-telemetry
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: green-node-telemetry
+subjects:
+  - kind: ServiceAccount
+    name: green-node-telemetry
+    namespace: default
 ---
 apiVersion: v1
 kind: Service
@@ -35,4 +70,38 @@ spec:
   ports:
     - port: 5000
       targetPort: 5000
+      nodePort: 30080
   type: NodePort
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: green-node-telemetry
+spec:
+  selector:
+    matchLabels:
+      app: green-node-telemetry
+  template:
+    metadata:
+      labels:
+        app: green-node-telemetry
+    spec:
+      serviceAccountName: green-node-telemetry
+      nodeSelector:
+        edge-role: compute
+      containers:
+        - name: telemetry-agent
+          image: green-edge-webhook:local
+          imagePullPolicy: IfNotPresent
+          command: ["python", "node_telemetry_agent.py"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: TELEMETRY_URL
+              value: http://green-scheduler-webhook:5000/api/telemetry
+            - name: CARBON_URL
+              value: http://green-scheduler-webhook:5000/api/carbon
+            - name: TELEMETRY_INTERVAL_SECONDS
+              value: "5"

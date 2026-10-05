@@ -5,6 +5,7 @@ import json
 import os
 from urllib.request import Request, urlopen
 from pathlib import Path
+from threading import RLock
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,10 @@ from torch import nn
 DATA_PATH = Path(__file__).with_name('india_monthly_full_release_long_format.csv')
 PREDICTION_HISTORY_PATH = Path(__file__).with_name('india_forecast_predictions.csv')
 _FORECAST_CACHE = {}
+_DATA_LOCK = RLock()
+_LIVE_BUCKETS = {}
+LIVE_AGGREGATION_MINUTES = max(
+    1, int(os.environ.get('FORECAST_AGGREGATION_MINUTES', '15')))
 
 
 def get_current_carbon_intensity(fallback=None):
@@ -51,19 +56,63 @@ class CarbonForecasterLSTM(nn.Module):
 
 def record_live_observation(timestamp, value):
     timestamp = pd.to_datetime(timestamp, errors='raise')
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_localize(None)
     value = float(value)
     if not np.isfinite(value) or value < 0:
         raise ValueError('value must be a finite non-negative number')
-    dataset = pd.read_csv(DATA_PATH)
-    dataset['Date'] = pd.to_datetime(dataset['Date'], errors='coerce')
-    row = {column: '' for column in dataset.columns}
-    row.update({'Date': timestamp, 'Country': 'India', 'State': 'India',
-                'Variable': 'Total emissions', 'Value': value})
-    duplicate = ((dataset['Date'] == timestamp) & (dataset['Country'] == 'India') &
-                 (dataset['State'] == 'India') & (dataset['Variable'] == 'Total emissions'))
-    dataset = pd.concat([dataset.loc[~duplicate], pd.DataFrame([row])], ignore_index=True)
-    dataset.sort_values('Date').to_csv(DATA_PATH, index=False, date_format='%Y-%m-%dT%H:%M:%S')
+    _append_observation(timestamp, value)
     _FORECAST_CACHE.clear()
+
+
+def _append_observation(timestamp, value):
+    with _DATA_LOCK:
+        dataset = pd.read_csv(DATA_PATH)
+        dataset['Date'] = pd.to_datetime(dataset['Date'], errors='coerce')
+        row = {column: '' for column in dataset.columns}
+        row.update({'Date': timestamp, 'Country': 'India', 'State': 'India',
+                    'Variable': 'Total emissions', 'Value': value})
+        duplicate = ((dataset['Date'] == timestamp) &
+                     (dataset['Country'] == 'India') &
+                     (dataset['State'] == 'India') &
+                     (dataset['Variable'] == 'Total emissions'))
+        dataset = pd.concat([dataset.loc[~duplicate], pd.DataFrame([row])],
+                            ignore_index=True)
+        dataset.sort_values('Date').to_csv(
+            DATA_PATH, index=False, date_format='%Y-%m-%dT%H:%M:%S')
+
+
+def record_live_sample(timestamp, value):
+    """Add a live sample and persist one aggregate per configured interval."""
+    timestamp = pd.to_datetime(timestamp, errors='raise')
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_localize(None)
+    value = float(value)
+    if not np.isfinite(value) or value < 0:
+        raise ValueError('value must be a finite non-negative number')
+
+    bucket = timestamp.floor(f'{LIVE_AGGREGATION_MINUTES}min')
+    with _DATA_LOCK:
+        _LIVE_BUCKETS.setdefault(bucket, []).append(value)
+        closed_buckets = [key for key in _LIVE_BUCKETS if key < bucket]
+        aggregate = None
+        aggregate_timestamp = None
+        for closed_bucket in sorted(closed_buckets):
+            samples = _LIVE_BUCKETS.pop(closed_bucket)
+            aggregate = float(np.mean(samples))
+            aggregate_timestamp = closed_bucket
+            _append_observation(aggregate_timestamp, aggregate)
+        if aggregate is not None:
+            _FORECAST_CACHE.clear()
+        return {
+            'aggregated': aggregate is not None,
+            'aggregation_interval_minutes': LIVE_AGGREGATION_MINUTES,
+            'sample_count': len(_LIVE_BUCKETS[bucket]),
+            'aggregate_timestamp': (
+                aggregate_timestamp.isoformat() if aggregate_timestamp is not None
+                else None),
+            'aggregate_value': aggregate,
+        }
 
 
 def _record_prediction_history(result):
@@ -95,8 +144,15 @@ def run_forecast():
     date_column = next((name for name in ('Date', 'Month', 'Year') if name in filtered), 'Date')
     filtered[date_column] = pd.to_datetime(filtered[date_column])
     filtered['Value'] = pd.to_numeric(filtered['Value'], errors='coerce')
-    series = (filtered.sort_values(date_column).drop_duplicates(date_column)
-              .set_index(date_column)['Value'].dropna().resample('h').interpolate().dropna())
+    # Aggregate state records into one stable India-wide series before the
+    # hourly interpolation; keeping an arbitrary row per date mixes states.
+    series = (filtered.dropna(subset=['Value']).groupby(date_column)['Value'].sum()
+              .sort_index().resample('h').interpolate().dropna())
+    lower_bound, upper_bound = series.quantile([0.01, 0.99])
+    if upper_bound > lower_bound:
+        series = series.clip(lower_bound, upper_bound)
+        series = 350 + ((series - lower_bound) /
+                        (upper_bound - lower_bound) * 500)
     # Keep the simulation responsive while retaining more than enough context
     # for 24-step input and output windows.
     series = series.tail(2000)
@@ -124,10 +180,11 @@ def run_forecast():
         recent = torch.tensor(scaled[-sequence_length:], dtype=torch.float32).unsqueeze(0)
         prediction = torch.clamp(model(recent), -1, 1).numpy()
     forecast = np.round(scaler.inverse_transform(prediction.reshape(-1, 1)).reshape(-1), 2)
-    result = {'state': 'India', 'variable': 'Total emissions',
+    result = {'state': 'India', 'variable': 'Carbon intensity',
               'forecast': [float(value) for value in forecast],
               'labels': [f'Hour {i}' for i in range(1, 25)],
-              'forecast_source': 'retrained'}
+              'forecast_source': 'retrained',
+              'last_trained_at': datetime.now().isoformat(timespec='seconds')}
     _FORECAST_CACHE[data_version] = result
     _record_prediction_history(result)
     return result.copy()

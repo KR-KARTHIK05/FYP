@@ -4,7 +4,12 @@ metadata:
   name: green-edge
 servers: 1
 agents: 3
+options:
+  k3s:
+    nodeLabels:
+      - edge-role=compute@agent:*
+      - edge-role=control-plane@server:*
 ports:
-  - port: 5000:30080
+  - port: 5001:30080
     nodeFilters:
       - loadbalancer

@@ -1,0 +1,12 @@
+FROM golang:1.22 AS build
+
+WORKDIR /src
+COPY go.mod ./
+RUN go mod download
+COPY schedulerplugin ./schedulerplugin
+COPY cmd ./cmd
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/green-scheduler ./cmd/green-scheduler
+
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /out/green-scheduler /usr/local/bin/green-scheduler
+ENTRYPOINT ["/usr/local/bin/green-scheduler"]

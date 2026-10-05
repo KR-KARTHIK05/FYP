@@ -11,7 +11,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
 COPY app.py module1.py module2_telemetry_sim.py \
-     module3_orchestrator.py module4_quantization_sim.py ./
+     module3_orchestrator.py module4_quantization_sim.py \
+     node_telemetry_agent.py workload_runner.py ./
+
+# Include the historical training data for the in-cluster forecast service.
+COPY india_monthly_full_release_long_format.csv ./
 
 # Copy the HTML template
 COPY templates/ ./templates/
