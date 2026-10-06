@@ -29,6 +29,9 @@ _LOCAL_NODE_PROFILES = (
     {'temperature_celsius': 48.0, 'power_watts': 7.2, 'is_busy': True},
     {'temperature_celsius': 41.0, 'power_watts': 4.6, 'is_busy': False},
 )
+from collections import deque
+from threading import RLock
+
 nodes = {}
 for index, name in enumerate(configured_nodes):
     node = SimulatedEdgeNode(name)
@@ -37,7 +40,10 @@ for index, name in enumerate(configured_nodes):
     node.current_power = profile['power_watts']
     node.is_busy = profile['is_busy']
     nodes[name] = node
-workload_history = []
+
+workload_history = deque(maxlen=50)
+workload_lock = RLock()
+
 JOB_OUTPUT_DIR = Path(__file__).with_name('job_outputs')
 JOB_OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -151,7 +157,9 @@ def api_telemetry():
 @app.route('/api/workloads')
 def api_workloads():
     workloads = []
-    for workload in workload_history:
+    with workload_lock:
+        history_snapshot = list(workload_history)
+    for workload in history_snapshot:
         node = nodes.get(workload['node'])
         state = (workload.get('reported_state') or workload.get('state')
                  or workload['status'])
@@ -163,9 +171,10 @@ def api_workloads():
 
 @app.route('/api/jobs/<job_id>')
 def job_status(job_id):
-    for job in reversed(workload_history):
-        if job['task_id'] == job_id:
-            return jsonify(job)
+    with workload_lock:
+        for job in reversed(workload_history):
+            if job['task_id'] == job_id:
+                return jsonify(job)
     return jsonify(status='error', message='unknown job_id'), 404
 
 
@@ -258,8 +267,9 @@ def submit_job():
         'current_grid_carbon': request.form.get('current_grid_carbon', type=float),
     }
     selected, status, task = _schedule_payload(task_payload)
-    job = next(item for item in reversed(workload_history)
-               if item['task_id'] == task_id)
+    with workload_lock:
+        job = next(item for item in reversed(workload_history)
+                   if item['task_id'] == task_id)
     if selected is not None:
         orchestrator.unreserve(task.task_id)
     plan = orchestrator.schedule_plan(task, list(nodes.values()),
@@ -292,9 +302,13 @@ def workload_status(task_id):
     state = payload.get('state')
     if state not in {'RUNNING', 'COMPLETED', 'FAILED'}:
         return jsonify(status='error', message='state must be RUNNING, COMPLETED, or FAILED'), 400
-    for workload in reversed(workload_history):
-        if workload['task_id'] == task_id:
-            workload['reported_state'] = state
+    with workload_lock:
+        for workload in reversed(workload_history):
+            if workload['task_id'] == task_id:
+                workload['reported_state'] = state
+                if state in {'COMPLETED', 'FAILED'}:
+                    orchestrator.unreserve(task_id)
+                return jsonify(status='ok', task_id=task_id, state=state)
             if state in {'COMPLETED', 'FAILED'}:
                 orchestrator.unreserve(task_id)
             return jsonify(status='ok', task_id=task_id, state=state)
@@ -329,16 +343,24 @@ def _schedule_payload(payload):
                         task_data.get('is_latency_critical', True),
                         task_data.get('accuracy_floor', 0.85),
                         is_high_power=task_data.get('is_high_power', False))
-    carbon = get_current_carbon_intensity(payload.get('current_grid_carbon'))
+                        
+    # Temporal Carbon Shifting: Use node annotation if provided, else fallback to API
+    carbon = payload.get('current_grid_carbon')
+    if not carbon and 'nodes' in payload and payload['nodes']:
+        annotations = payload['nodes'][0].get('metadata', {}).get('annotations', {})
+        carbon = annotations.get('green-edge.io/carbon-intensity')
+        
+    carbon = get_current_carbon_intensity(carbon)
+    
     selected, status = orchestrator.schedule(task, list(nodes.values()), carbon)
-    workload_history.append({
-        'task_id': task.task_id,
-        'node': selected.node_id if selected else None,
-        'precision': task.precision,
-        'carbon': round(carbon, 2),
-        'status': status,
-    })
-    del workload_history[:-50]
+    with workload_lock:
+        workload_history.append({
+            'task_id': task.task_id,
+            'node': selected.node_id if selected else None,
+            'precision': task.precision,
+            'carbon': round(carbon, 2),
+            'status': status,
+        })
     return selected, status, task
 
 

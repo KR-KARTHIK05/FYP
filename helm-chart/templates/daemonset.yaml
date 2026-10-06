@@ -1,0 +1,29 @@
+{{- if .Values.telemetryAgent.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "green-edge-scheduler.fullname" . }}-telemetry-agent
+  labels:
+    {{- include "green-edge-scheduler.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: telemetry-agent
+  template:
+    metadata:
+      labels:
+        app: telemetry-agent
+    spec:
+      serviceAccountName: {{ include "green-edge-scheduler.serviceAccountName" . }}
+      containers:
+        - name: agent
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          command: ["python", "node_telemetry_agent.py"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: TELEMETRY_INTERVAL_SECONDS
+              value: {{ .Values.telemetryAgent.intervalSeconds | quote }}
+{{- end }}

@@ -23,6 +23,7 @@ def run_benchmark(carbon_forecast, scheduler_type):
             for task_index in range(3):
                 if scheduler_type == 'proposed':
                     task = WorkloadTask(f't-{hour}-{minute}-{task_index}', random.random() > 0.3)
+                    # Use node.node_id for comparison since assignments stores nodes
                     available_nodes = [node for node in nodes if node not in assignments]
                     if available_nodes:
                         selected, status = orchestrator.schedule(task, available_nodes, carbon)
@@ -34,14 +35,22 @@ def run_benchmark(carbon_forecast, scheduler_type):
                     selected, status = nodes[task_index % len(nodes)], 'SCHEDULED_OPTIMAL_FP32'
                 if selected is not None and status.startswith('SCHEDULED'):
                     assignments[selected] = status
+            
             for node in nodes:
                 status = assignments.get(node)
                 active = status is not None
                 power = node.active_power_int8 if active and 'INT8' in status else node.active_power_fp32
                 node.update_physics(60, power if active else None)
+                node.touch() # Reset telemetry age so they aren't filtered out
                 watts = power if active else node.idle_power
                 total_carbon += watts * 60 / 3600000 * carbon
                 temperatures[node.node_id].append(node.temp)
+            
+            # Clear reservations at the end of the simulated minute since tasks only last 1 minute in the simulation
+            if scheduler_type == 'proposed':
+                for task_index in range(3):
+                    orchestrator.unreserve(f't-{hour}-{minute}-{task_index}')
+                    
     return total_carbon, temperatures, quantized, deferred
 
 

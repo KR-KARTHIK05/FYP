@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Install dependencies first (cached layer)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir gunicorn -r requirements.txt
 
 # Copy application source
 COPY app.py module1.py module2_telemetry_sim.py \
@@ -27,4 +27,4 @@ USER appuser
 
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
